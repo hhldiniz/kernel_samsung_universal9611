@@ -5329,6 +5329,34 @@ static int abox_request_firmware(struct device *dev,
 	return ret;
 }
 
+/*
+ * The first firmware request runs at probe, long before a Halium system
+ * mounts /vendor, and nothing requests it again until a suspend cycle.
+ * Retry until /vendor/firmware is reachable so Calliope can boot.
+ */
+#define ABOX_FW_RETRY_MS	3000
+#define ABOX_FW_RETRY_MAX	100
+
+static void abox_complete_sram_firmware_request(const struct firmware *fw,
+		void *context);
+
+static int abox_fw_retry_count;
+
+static void abox_fw_retry_work_func(struct work_struct *work)
+{
+	struct platform_device *pdev;
+
+	if (!p_abox_data || !p_abox_data->pdev || p_abox_data->firmware_sram)
+		return;
+
+	pdev = p_abox_data->pdev;
+	request_firmware_nowait(THIS_MODULE, FW_ACTION_HOTPLUG,
+			"calliope_sram.bin", &pdev->dev, GFP_KERNEL, pdev,
+			abox_complete_sram_firmware_request);
+}
+
+static DECLARE_DELAYED_WORK(abox_fw_retry_work, abox_fw_retry_work_func);
+
 static void abox_complete_sram_firmware_request(const struct firmware *fw,
 		void *context)
 {
@@ -5337,7 +5365,14 @@ static void abox_complete_sram_firmware_request(const struct firmware *fw,
 	struct abox_data *data = platform_get_drvdata(pdev);
 
 	if (!fw) {
-		dev_err(dev, "Failed to request firmware\n");
+		if (abox_fw_retry_count++ < ABOX_FW_RETRY_MAX) {
+			dev_warn(dev, "Failed to request firmware, retry %d\n",
+					abox_fw_retry_count);
+			schedule_delayed_work(&abox_fw_retry_work,
+					msecs_to_jiffies(ABOX_FW_RETRY_MS));
+		} else {
+			dev_err(dev, "Failed to request firmware\n");
+		}
 		return;
 	}
 
