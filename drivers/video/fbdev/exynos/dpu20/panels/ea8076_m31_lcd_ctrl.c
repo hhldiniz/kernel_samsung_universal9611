@@ -1111,7 +1111,14 @@ static int ea8076_probe(struct lcd_info *lcd)
 
 	dev_info(&lcd->ld->dev, "+ %s\n", __func__);
 
-	lcd->bd->props.max_brightness = EXTEND_BRIGHTNESS;
+	/*
+	 * Levels above UI_MAX_BRIGHTNESS switch the panel to HBM (LEVEL_IS_HBM).
+	 * Samsung's framework only goes there for outdoor light, but generic
+	 * userspace (Ubuntu Touch's repowerd) scales its slider to
+	 * max_brightness, so advertising EXTEND_BRIGHTNESS put the top third of
+	 * the slider in HBM. Keep the backlight class in the normal range.
+	 */
+	lcd->bd->props.max_brightness = UI_MAX_BRIGHTNESS;
 	lcd->bd->props.brightness = UI_DEFAULT_BRIGHTNESS;
 #if defined(CONFIG_SUPPORT_MASK_LAYER)
 	lcd->mask_brightness = UI_MAX_BRIGHTNESS;
