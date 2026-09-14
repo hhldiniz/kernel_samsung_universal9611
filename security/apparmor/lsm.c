@@ -741,6 +741,56 @@ static int apparmor_task_kill(struct task_struct *target, struct siginfo *info,
 	return error;
 }
 
+/**
+ * apparmor_socket_getpeersec_stream - get the AppArmor label of a socket peer
+ *
+ * This tree has no AppArmor socket mediation (it arrived upstream in 4.17),
+ * so there is no per-socket peer label. For connected sockets the kernel
+ * records the peer's credentials at connect time (SO_PEERCRED); report the
+ * AppArmor label of those credentials. With LSM stacking this is what
+ * SO_PEERSEC returns when AppArmor is the display LSM, and it is how
+ * dbus-daemon learns a client's AppArmor label.
+ */
+static int apparmor_socket_getpeersec_stream(struct socket *sock,
+					     char __user *optval,
+					     int __user *optlen,
+					     unsigned int len)
+{
+	const struct cred *peer_cred;
+	struct aa_label *label, *peer;
+	char *name;
+	int slen, error = 0;
+
+	spin_lock(&sock->sk->sk_peer_lock);
+	peer_cred = get_cred(sock->sk->sk_peer_cred);
+	spin_unlock(&sock->sk->sk_peer_lock);
+	if (!peer_cred)
+		return -ENOPROTOOPT;
+
+	label = begin_current_label_crit_section();
+	peer = aa_get_newest_cred_label(peer_cred);
+	slen = aa_label_asxprint(&name, labels_ns(label), peer,
+				 FLAG_SHOW_MODE | FLAG_VIEW_SUBNS |
+				 FLAG_HIDDEN_UNCONFINED, GFP_KERNEL);
+	/* don't include terminating \0 in slen, it breaks some apps */
+	if (slen < 0) {
+		error = -ENOMEM;
+	} else {
+		if (slen > len)
+			error = -ERANGE;
+		else if (copy_to_user(optval, name, slen))
+			error = -EFAULT;
+		if (!error && put_user(slen, optlen))
+			error = -EFAULT;
+		kfree(name);
+	}
+	aa_put_label(peer);
+	end_current_label_crit_section(label);
+	put_cred(peer_cred);
+
+	return error;
+}
+
 struct lsm_blob_sizes apparmor_blob_sizes = {
 	.lbs_cred = sizeof(struct aa_task_ctx),
 	.lbs_file = sizeof(struct aa_file_ctx),
@@ -778,6 +828,8 @@ static struct security_hook_list apparmor_hooks[] __lsm_ro_after_init = {
 	LSM_HOOK_INIT(file_lock, apparmor_file_lock),
 
 	LSM_HOOK_INIT(getprocattr, apparmor_getprocattr),
+	LSM_HOOK_INIT(socket_getpeersec_stream,
+		      apparmor_socket_getpeersec_stream),
 	LSM_HOOK_INIT(setprocattr, apparmor_setprocattr),
 
 	LSM_HOOK_INIT(cred_free, apparmor_cred_free),
