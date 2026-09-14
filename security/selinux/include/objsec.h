@@ -169,4 +169,9 @@ static inline u32 current_sid(void)
 	return tsec->sid;
 }
 
+static inline struct file_security_struct *selinux_file(const struct file *file)
+{
+	return file->f_security;
+}
+
 #endif /* _SELINUX_OBJSEC_H_ */
