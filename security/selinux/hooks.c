@@ -6076,7 +6076,8 @@ static int selinux_setprocattr(const char *name, void *value, size_t size)
 				     mysid, mysid, SECCLASS_PROCESS,
 				     PROCESS__SETCURRENT, NULL);
 	else if (!strcmp(name, "context"))
-		error = avc_has_perm(mysid, mysid, SECCLASS_PROCESS,
+		error = avc_has_perm(&selinux_state,
+				     mysid, mysid, SECCLASS_PROCESS,
 				     PROCESS__SETCURRENT, NULL);
 	else
 		error = -EINVAL;
