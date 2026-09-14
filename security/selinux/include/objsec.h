@@ -25,6 +25,9 @@
 #include <linux/binfmts.h>
 #include <linux/in.h>
 #include <linux/spinlock.h>
+#include <linux/lsm_hooks.h>
+#include <linux/msg.h>
+#include <net/sock.h>
 #include <net/net_namespace.h>
 #include "flask.h"
 #include "avc.h"
@@ -37,16 +40,6 @@ struct task_security_struct {
 	u32 keycreate_sid;	/* keycreate SID */
 	u32 sockcreate_sid;	/* fscreate SID */
 };
-
-/*
- * get the subjective security ID of the current task
- */
-static inline u32 current_sid(void)
-{
-	const struct task_security_struct *tsec = current_security();
-
-	return tsec->sid;
-}
 
 enum label_initialized {
 	LABEL_INVALID,		/* invalid or not initialized */
@@ -157,5 +150,23 @@ struct bpf_security_struct {
 struct perf_event_security_struct {
 	u32 sid;  /* SID of perf_event obj creator */
 };
+
+extern unsigned int selinux_checkreqprot;
+extern struct lsm_blob_sizes selinux_blob_sizes;
+
+static inline struct task_security_struct *selinux_cred(const struct cred *cred)
+{
+	return cred->security;
+}
+
+/*
+ * get the subjective security ID of the current task
+ */
+static inline u32 current_sid(void)
+{
+	const struct task_security_struct *tsec = selinux_cred(current_cred());
+
+	return tsec->sid;
+}
 
 #endif /* _SELINUX_OBJSEC_H_ */
